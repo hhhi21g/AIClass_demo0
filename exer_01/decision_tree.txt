@@ -1,11 +1,11 @@
 F3 ¡Ü 2.45:
   Label: 1
-  F3 ¡Ü 4.80:
-    F4 ¡Ü 1.70:
-      Label: 2
-      Label: 3
+  F3 ¡Ü 4.75:
+    Label: 2
     F4 ¡Ü 1.75:
-      F3 ¡Ü 5.10:
+      F3 ¡Ü 5.05:
         Label: 2
-        Label: 3
+        F1 ¡Ü 6.05:
+          Label: 2
+          Label: 3
       Label: 3

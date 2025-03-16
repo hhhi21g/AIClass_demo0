@@ -24,32 +24,31 @@ def best_split(feature, labels):
     sorted_feature = feature[sorted_indices]
     sorted_labels = labels[sorted_indices]
 
-    best_gain_ratio = -1
+    best_gain = -1
     best_threshold = None
 
     for i in range(1, len(sorted_feature)):  # 计算所有可能的划分点
+        if sorted_feature[i] == sorted_feature[i - 1]:
+            continue  # 如果不跳过特征值相同的样本，分类准确率相同，决策树略不同
         threshold = (sorted_feature[i] + sorted_feature[i - 1]) / 2
         left_labels = sorted_labels[:i]
         right_labels = sorted_labels[i:]
 
         # 计算信息增益
         H = entropy(labels)
-        H_left = entropy(left_labels)
+        H_left = entropy(left_labels)  # 计算左右子树熵值
         H_right = entropy(right_labels)
 
         weight_left = len(left_labels) / len(labels)
         weight_right = len(right_labels) / len(labels)
+
         gain = H - (weight_left * H_left + weight_right * H_right)
 
-        # 计算增益率（避免除零错误）
-        split = - (weight_left * log2(weight_left) + weight_right * log2(weight_right)) if weight_left > 0 and weight_right > 0 else 0
-        gain_ratio = gain / split if split != 0 else 0
-
-        if gain_ratio > best_gain_ratio:
-            best_gain_ratio = gain_ratio
+        if gain > best_gain:
+            best_gain = gain
             best_threshold = threshold
 
-    return best_threshold, best_gain_ratio
+    return best_threshold, best_gain
 
 # 选择最佳特征
 def choose_best_feature(features, labels):
@@ -127,23 +126,33 @@ def accuracy(tree, test_features, test_labels, feature_names):
     return correct / len(test_labels)
 
 # 决策树可视化
-def visualize_tree(tree, dot=None):
+def visualize_tree(tree, parent_node=None, edge_label='', dot=None):
     if dot is None:
-        dot = Digraph()
+        dot = Digraph(comment='Decision Tree', format='png')  # 指定格式为PNG，兼容性更好
+        dot.attr('node', shape='ellipse', style='filled', color='lightblue2')  # 美化节点样式
 
-    root = list(tree.keys())[0]
-    dot.node(root)
+    # 生成当前节点的唯一ID（避免重复）
+    current_node_id = str(id(tree))
 
-    for relation, subtree in tree[root].items():
-        if 'label' in subtree:
-            child = f"{root}_{relation}_{subtree['label']}"
-            dot.node(child, subtree['label'])
-            dot.edge(root, child, label=relation)
-        else:
-            child = list(subtree.keys())[0]
-            dot.node(child)
-            dot.edge(root, child, label=relation)
-            visualize_tree(subtree, dot)
+    # 判断节点类型：叶子节点 or 内部节点
+    if 'label' in tree:
+        node_label = f'Label: {tree["label"]}'
+        dot.node(current_node_id, label=node_label, shape='box', color='lightcoral')  # 叶子节点用红色方框
+    else:
+        node_label = list(tree.keys())[0]
+        dot.node(current_node_id, label=node_label)
+
+    # 连接父节点和当前节点
+    if parent_node is not None:
+        dot.edge(parent_node, current_node_id, label=edge_label, fontsize='10')
+
+    # 递归处理子树
+    if 'label' not in tree:
+        feature = list(tree.keys())[0]
+        left_subtree = tree[feature]['<=']
+        right_subtree = tree[feature]['>']
+        visualize_tree(left_subtree, current_node_id, '<=', dot)
+        visualize_tree(right_subtree, current_node_id, '>', dot)
 
     return dot
 
@@ -184,3 +193,6 @@ if __name__ == "__main__":
     # 将测试结果保存到文件
     save_predictions_to_txt(tree, test_features, test_labels, feature_names)
     print("预测结果已保存至 predictions.txt")
+
+    dot = visualize_tree(tree)
+    dot.render(filename="Decision_Tree",view=True,cleanup=True)
