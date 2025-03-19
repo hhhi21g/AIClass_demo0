@@ -58,7 +58,7 @@ def backward(X, y, Z1, A1, A2, w2):
     return dw1, db1, dw2, db2
 
 
-def train(X, y, num_hiddens, lr=0.5, epochs=20000):
+def train(X, y, num_hiddens, lr=0.01, epochs=20000):
     num_inputs = X.shape[1]
     num_outputs = y.shape[1]
 
