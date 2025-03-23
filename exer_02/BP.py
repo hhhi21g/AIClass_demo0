@@ -45,7 +45,6 @@ def forward(X, w1, b1, w2, b2):
     return Z1, A1, Z2, A2
 
 
-# 交叉熵：Loss = - sum(yi*ln(A2i))
 # 反向传播
 def backward(X, y, A1, A2, w2):
     m = X.shape[0]
@@ -53,6 +52,7 @@ def backward(X, y, A1, A2, w2):
     dZ2 = A2 - y
     dw2 = (A1.T @ dZ2) / m
     db2 = np.sum(dZ2, axis=0, keepdims=True) / m
+
 
     dA1 = dZ2 @ w2.T
     A1 = np.asarray(A1)
@@ -71,6 +71,7 @@ def predict(X, w1, b1, w2, b2):
 def accuracy(preds, test_labels):
     test_labels = test_labels.flatten()
     preds = preds.flatten()
+    print(test_labels - preds)
     return np.mean(test_labels == preds)
 
 
@@ -81,9 +82,10 @@ def train(X, y, num_hiddens, lr=0.01, epochs=10000):
     w1, b1, w2, b2 = init_param(num_inputs, num_hiddens, num_outputs)
 
     m = X.shape[0]
-    batch_size = 16
+    batch_size = 1
 
     for epoch in range(epochs):
+        np.random.seed(None)
         idx = np.random.permutation(m)
         X_shuffled, y_shuffled = X[idx], y[idx]
 
@@ -110,8 +112,13 @@ if __name__ == "__main__":
     # 返回每个样本属于每个种类的概率，这里使用独热编码处理
     train_labels_onehot = encode_y(train_labels)
     min_max_scalar = preprocessing.MinMaxScaler()
+
     train_features = min_max_scalar.fit_transform(train_features)
+    # print(min_max_scalar.data_max_)
+    # print(min_max_scalar.data_min_)
+    # print(train_features)
     test_features = min_max_scalar.transform(test_features)
+    # print(test_features)
 
     num_inputs, num_outputs, num_hiddens = train_features.shape[1], 3, 10
 
