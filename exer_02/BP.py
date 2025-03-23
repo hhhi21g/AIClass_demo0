@@ -71,7 +71,7 @@ def predict(X, w1, b1, w2, b2):
 def accuracy(preds, test_labels):
     test_labels = test_labels.flatten()
     preds = preds.flatten()
-    print(test_labels - preds)
+    # print(test_labels - preds)
     return np.mean(test_labels == preds)
 
 
@@ -82,7 +82,7 @@ def train(X, y, num_hiddens, lr=0.01, epochs=10000):
     w1, b1, w2, b2 = init_param(num_inputs, num_hiddens, num_outputs)
 
     m = X.shape[0]
-    batch_size = 1
+    batch_size = 16
 
     for epoch in range(epochs):
         np.random.seed(None)
