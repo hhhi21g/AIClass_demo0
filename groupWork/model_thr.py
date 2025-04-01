@@ -47,9 +47,10 @@ USE_AMP = True
 INIT = False
 
 # 输入数据路径
-root_in = 'D:\\Demo\input\\dataset' 
+# root_in = 'D:\\Demo\input\\dataset'
+root_in = '\\shortData'
 # 输出数据路径
-root_out = 'D:\\Demo\\output'
+root_out = '\\shortData\\output'
 # 是否有索引
 have_index = False 
 
