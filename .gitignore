@@ -7,3 +7,6 @@ single_work/BERT/
 single_work/data/sample_submission.csv
 single_work/data/test.csv
 single_work/data/train.csv
+single_work/xlm-roberta-large/
+single_work/xlm-roberta-base/
+
