@@ -1,3 +1,9 @@
 groupWork/data/
 groupWork/shortData/
 groupWork/shortData/train_cultivar_mapping.csv
+single_work/data/
+single_work/BERT/
+报告/
+single_work/data/sample_submission.csv
+single_work/data/test.csv
+single_work/data/train.csv
