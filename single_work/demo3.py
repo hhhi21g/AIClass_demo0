@@ -14,8 +14,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 # model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\BERT'
-# model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-large'
 model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
+
+
+# model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-large'
 
 
 # model_name = 'google-bert/bert-base-uncased'
@@ -143,18 +145,61 @@ from transformers import get_linear_schedule_with_warmup
 model = XLMRobertaForSequenceClassification.from_pretrained(
     model_name,
     num_labels=3,
-    hidden_dropout_prob=0.2,
+    hidden_dropout_prob=0.4,
     classifier_dropout=0.2)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=2e-5)
+optimizer = AdamW(model.parameters(), lr=2e-5,weight_decay=0.01)
 # 设置训练轮次
-epochs = 6
+epochs = 30
 total_steps = len(train_dataloader) * epochs
 scheduler = get_linear_schedule_with_warmup(optimizer,
-                                            num_warmup_steps=int(0.1 * total_steps),
+                                            num_warmup_steps=int(0.15 * total_steps),
                                             num_training_steps=total_steps)
 import torch
 
+
+class EarlyStopping:
+    def __init__(self, patience=4, delta=0.0, verbose=False, path='checkpoint.pt'):
+        """
+        :param patience: 当验证损失不再改善时，等待的 epochs 数量。
+        :param delta: 验证损失的变化幅度，只有变化超过这个值时才认为模型改善。
+        :param verbose: 是否打印出早停的相关信息。
+        :param path: 最佳模型的保存路径。
+        """
+        self.patience = patience
+        self.delta = delta
+        self.verbose = verbose
+        self.path = path
+        self.best_loss = None
+        self.best_epoch = 0
+        self.counter = 0
+        self.early_stop = False
+
+    def __call__(self, val_loss, model):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            self.save_checkpoint(model)
+        elif val_loss < self.best_loss - self.delta:
+            self.best_loss = val_loss
+            self.best_epoch = 0
+            self.save_checkpoint(model)
+        elif val_loss >= self.best_loss - self.delta:
+            self.counter += 1
+            if self.verbose:
+                print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+
+    def save_checkpoint(self, model):
+        '''保存模型的最佳状态'''
+        torch.save(model.state_dict(), self.path)
+
+
+from torch.cuda.amp import autocast, GradScaler
+
+scaler = GradScaler()
+
+early_stopping = EarlyStopping(patience=8, delta=0.001, verbose=True)
 
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
@@ -168,11 +213,14 @@ for epoch in range(epochs):
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['label'].to(device)
 
-        # 前向传播
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-        loss = outputs.loss
-        total_loss += loss.item()
-
+        with autocast():  # 启用混合精度
+            # 前向传播
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            total_loss += loss.item()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         # 反向传播
         loss.backward()
         optimizer.step()  # 更新模型参数
@@ -180,26 +228,38 @@ for epoch in range(epochs):
         loop.set_postfix(loss=loss.item())
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
 
-# 假设你有一个验证集的 DataLoader（val_dataloader）
-model.eval()  # 设置模型为评估模式
-correct_predictions = 0
-total_predictions = 0
-with torch.no_grad():
-    loop = tqdm(dev_dataloader, desc='Validating')
-    for batch in loop:  # 验证集的数据
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        labels = batch['label'].to(device)
+    # 假设你有一个验证集的 DataLoader（val_dataloader）
+    model.eval()  # 设置模型为评估模式
+    val_loss = 0
+    correct_predictions = 0
+    total_predictions = 0
+    with torch.no_grad():
+        loop = tqdm(dev_dataloader, desc='Validating')
+        for batch in loop:  # 验证集的数据
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['label'].to(device)
 
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            val_loss += loss.item()
 
-        predictions = torch.argmax(logits, dim=-1)
-        correct_predictions += (predictions == labels).sum().item()
-        total_predictions += labels.size(0)
+            logits = outputs.logits
 
-accuracy = correct_predictions / total_predictions
-print(f'Validation Accuracy: {accuracy}')
+            predictions = torch.argmax(logits, dim=-1)
+            correct_predictions += (predictions == labels).sum().item()
+            total_predictions += labels.size(0)
+
+    avg_val_loss = val_loss / len(dev_dataloader)
+    accuracy = correct_predictions / total_predictions
+    print(f'Epoch {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss}, Accuracy: {accuracy}')
+
+    early_stopping(avg_val_loss, model)
+
+    if (early_stopping.early_stop):
+        print("Early stopping triggered.Training stopped")
+        break
+# print(f'Validation Accuracy: {accuracy}')
 
 test_data = pd.read_csv('data/test.csv')
 

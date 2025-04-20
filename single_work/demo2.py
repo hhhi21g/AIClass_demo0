@@ -144,7 +144,7 @@ model = XLMRobertaForSequenceClassification.from_pretrained(model_name, num_labe
 model = model.to(device)
 optimizer = Adam(model.parameters(), lr=2e-5)
 # 设置训练轮次
-epochs = 6
+epochs = 30
 total_steps = len(train_dataloader) * epochs
 scheduler = get_linear_schedule_with_warmup(optimizer,
                                             num_warmup_steps=0,
