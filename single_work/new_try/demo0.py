@@ -6,13 +6,15 @@ import matplotlib.pyplot as plt
 import torch
 import os
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
+from transformers import AutoConfig
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\BERT'
+
 
 # model_name = 'bert-base-uncased'
 
@@ -116,30 +118,59 @@ class DataProcessor():
         plt.show()
 
 
-processor = DataProcessor('data/train.csv')
+processor = DataProcessor('..\\data\\augmented_train.csv')
 processor.eda('view_data')
 processor.eda('count_class_distri')
 processor.eda('text_length_distri')
 train_dataloader, dev_dataloader = processor.get_dataloader()
+
 
 # for batch in train_dataloader:
 #     print(batch['input_ids'].shape)  # [8,128],[batch_size,max_length]
 #     print(batch['attention_mask'].shape)  # [8,128]
 #     print(batch['label'].shape)  # [8]
 #     break
+class EarlyStopping:
+    def __init__(self, patience=3, delta=0.001):
+        self.patience = patience
+        self.delta = delta
+        self.best_loss = None
+        self.counter = 0
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+        elif val_loss < self.best_loss - self.delta:
+            self.best_loss = val_loss
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
 
 
 from transformers import AutoModelForSequenceClassification
-from torch.optim import AdamW, Adam
+from torch.optim import AdamW
 
-model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=3)
+config = AutoConfig.from_pretrained(model_name, num_labels=3)
+# config.hidden_dropout_prob = 0.4
+
+model = AutoModelForSequenceClassification.from_pretrained(model_name, config=config)
 model = model.to(device)
 optimizer = AdamW(model.parameters(), lr=2e-5)
 
 import torch
 
 # 设置训练轮次
-epochs = 50
+epochs = 10
+early_stopping = EarlyStopping(patience=8, delta=0.001)
+
+# 创建学习率调度器
+# scheduler = get_linear_schedule_with_warmup(optimizer,
+#                                             num_warmup_steps=0,
+#                                             num_training_steps=len(train_dataloader)*epochs)
+
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
     total_loss = 0
@@ -159,31 +190,40 @@ for epoch in range(epochs):
 
         # 反向传播
         loss.backward()
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()  # 更新模型参数
-
+        # scheduler.step()
         loop.set_postfix(loss=loss.item())
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
 
-# 假设你有一个验证集的 DataLoader（val_dataloader）
-model.eval()  # 设置模型为评估模式
-correct_predictions = 0
-total_predictions = 0
-with torch.no_grad():
-    loop = tqdm(dev_dataloader, desc='Validating')
-    for batch in loop:  # 验证集的数据
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        labels = batch['label'].to(device)
+    # 假设你有一个验证集的 DataLoader（val_dataloader）
+    model.eval()  # 设置模型为评估模式
+    val_loss = 0
+    correct_predictions = 0
+    total_predictions = 0
+    with torch.no_grad():
+        loop = tqdm(dev_dataloader, desc='Validating')
+        for batch in loop:  # 验证集的数据
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['label'].to(device)
 
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            val_loss += outputs.loss.item()
+            logits = outputs.logits
 
-        predictions = torch.argmax(logits, dim=-1)
-        correct_predictions += (predictions == labels).sum().item()
-        total_predictions += labels.size(0)
+            predictions = torch.argmax(logits, dim=-1)
+            correct_predictions += (predictions == labels).sum().item()
+            total_predictions += labels.size(0)
 
-accuracy = correct_predictions / total_predictions
-print(f'Validation Accuracy: {accuracy}')
+    accuracy = correct_predictions / total_predictions
+    avg_val_loss = val_loss / len(dev_dataloader)
+    print(f'Validation Loss: {avg_val_loss}, Accuracy: {accuracy}')
+
+    early_stopping(avg_val_loss)
+    if early_stopping.early_stop:
+        print("Early stopping triggered!")
+        break
 
 test_data = pd.read_csv('data/test.csv')
 
@@ -196,7 +236,7 @@ model.eval()
 predictions = []
 
 with torch.no_grad():  # 禁用梯度计算
-    loop = tqdm(test_dataloader,desc='Predicting')
+    loop = tqdm(test_dataloader, desc='Predicting')
     for batch in loop:
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)

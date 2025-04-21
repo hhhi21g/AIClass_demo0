@@ -130,7 +130,7 @@ train_dataloader, dev_dataloader = processor.get_dataloader()
 
 
 from transformers import AutoModelForSequenceClassification
-from torch.optim import AdamW, Adam
+from torch.optim import AdamW
 
 model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=3)
 model = model.to(device)
@@ -139,7 +139,7 @@ optimizer = AdamW(model.parameters(), lr=2e-5)
 import torch
 
 # 设置训练轮次
-epochs = 50
+epochs = 10
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
     total_loss = 0
