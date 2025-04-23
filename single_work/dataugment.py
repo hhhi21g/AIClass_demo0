@@ -1,6 +1,7 @@
 import random
 import pandas as pd
 import nltk
+from langdetect import detect, LangDetectException
 from nltk.corpus import wordnet
 from transformers import MarianMTModel, MarianTokenizer
 import torch
@@ -19,10 +20,18 @@ model_name_trans = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\opus-mt-en-de'
 model_trans = MarianMTModel.from_pretrained(model_name_trans).to('cuda')
 tokenizer_trans = MarianTokenizer.from_pretrained(model_name_trans)
 
-back_model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\opus-mt-en-de'  # 德文->英文
+back_model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\opus-mt-de-en'  # 德文->英文
 back_model = MarianMTModel.from_pretrained(back_model_name).to('cuda')
 back_tokenizer = MarianTokenizer.from_pretrained(back_model_name)
 
+back_translation_log = []
+
+def is_english(text):
+    try:
+        lang = detect(text)
+        return lang == 'en'
+    except LangDetectException:
+        return False
 
 def synonym_replacement(sentence):
     """替换随机单词为同义词"""
@@ -51,13 +60,17 @@ def back_translation_batch(sentences):
             'cuda')
         back_translated = back_model.generate(**back_inputs)
         en_texts = back_tokenizer.batch_decode(back_translated, skip_special_tokens=True)
+
+        for orig,bt in zip(sentences,en_texts):
+            back_translation_log.append(f"{orig.strip()}|||{bt.strip()}")
+
     return en_texts
 
 
 def random_deletion(sentence, p=0.1):
     """随机删除单词"""
     words = sentence.split()
-    if len(words) < 2:
+    if len(words) < 5:
         return sentence
     return ' '.join([w for w in words if random.random() > p])
 
@@ -65,8 +78,8 @@ def random_deletion(sentence, p=0.1):
 def augment_data(premise, hypothesis, label):
     """数据增强处理"""
     try:
-        # 回译增强（30%概率执行）
-        if random.random() < 0.6:
+        # 回译增强（50%概率执行）
+        if random.random() < 0.7 and is_english(premise) and is_english(hypothesis):
             bt_results = back_translation_batch([premise, hypothesis])
             premise, hypothesis = bt_results[0], bt_results[1]
 
@@ -75,8 +88,8 @@ def augment_data(premise, hypothesis, label):
             premise = synonym_replacement(premise)
             hypothesis = synonym_replacement(hypothesis)
 
-        # 随机删除（60%概率执行）
-        if random.random() < 0.3:
+        # 随机删除（20%概率执行）
+        if random.random() < 0.2:
             premise = random_deletion(premise)
             hypothesis = random_deletion(hypothesis)
 

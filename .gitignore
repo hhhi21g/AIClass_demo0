@@ -11,3 +11,5 @@ single_work/xlm-roberta-large/
 single_work/xlm-roberta-base/
 
 single_work/opus-mt-en-de/
+single_work/opus-mt-de-en/
+single_work/bert-base-multilingual-uncased/

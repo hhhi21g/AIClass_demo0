@@ -158,7 +158,7 @@ config = AutoConfig.from_pretrained(model_name, num_labels=3)
 
 model = AutoModelForSequenceClassification.from_pretrained(model_name, config=config)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=2e-5)
+optimizer = AdamW(model.parameters(), lr=2e-5,weight_decay=0.01)
 
 import torch
 
