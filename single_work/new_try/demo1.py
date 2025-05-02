@@ -13,7 +13,9 @@ from transformers import AutoConfig
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\bert-base-multilingual-uncased'
+model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
+
+
 # model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\'
 
 # model_name = 'bert-base-uncased'
@@ -79,9 +81,9 @@ class DataProcessor():
         k = len(data_list) // 5
 
         train_dataset = MyDataset(data_list[k:])
-        train_dataloader = DataLoader(train_dataset, batch_size=8)
+        train_dataloader = DataLoader(train_dataset, batch_size=64)
         dev_dataset = MyDataset(data_list[:k])
-        dev_dataloader = DataLoader(dev_dataset, batch_size=16)
+        dev_dataloader = DataLoader(dev_dataset, batch_size=32)
         return train_dataloader, dev_dataloader
 
     def _view_data(self):  # "_"表示供EDA调用的辅助方法
@@ -131,45 +133,57 @@ train_dataloader, dev_dataloader = processor.get_dataloader()
 #     print(batch['label'].shape)  # [8]
 #     break
 class EarlyStopping:
-    def __init__(self, patience=3, delta=0.001):
-        self.patience = patience
-        self.delta = delta
-        self.best_loss = None
-        self.counter = 0
-        self.early_stop = False
+    def __init__(self, patience=8, delta=0.001):
+        self.patience = patience  # 容忍的轮数
+        self.delta = delta  # 精度提升的最小值
+        self.best_accuracy = None  # 最好的准确率
+        self.counter = 0  # 当前未提升的轮数
+        self.early_stop = False  # 是否触发早停
 
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss < self.best_loss - self.delta:
-            self.best_loss = val_loss
-            self.counter = 0
-        else:
+    def __call__(self, val_accuracy):
+        if self.best_accuracy is None:  # 第一次运行
+            self.best_accuracy = val_accuracy
+        elif val_accuracy > self.best_accuracy + self.delta:  # 如果当前准确率超过最佳准确率
+            self.best_accuracy = val_accuracy
+            self.counter = 0  # 重置未提升轮数
+        else:  # 如果准确率没有提升
             self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
+            if self.counter >= self.patience:  # 如果连续多个轮次没有提升
+                self.early_stop = True  # 触发早停
+
 
 
 from transformers import AutoModelForSequenceClassification
 from torch.optim import AdamW
 
 config = AutoConfig.from_pretrained(model_name, num_labels=3)
-# config.hidden_dropout_prob = 0.4
+config.hidden_dropout_prob = 0.3
 
 model = AutoModelForSequenceClassification.from_pretrained(model_name, config=config)
+
+print(model)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=2e-5,weight_decay=0.01)
+optimizer = AdamW(model.parameters(), lr=1e-5, weight_decay=0.001)
 
 import torch
 
 # 设置训练轮次
-epochs = 10
-early_stopping = EarlyStopping(patience=8, delta=0.001)
+epochs = 60
+early_stopping = EarlyStopping(patience=20, delta=0)
+total_steps = len(train_dataloader) * epochs
 
 # 创建学习率调度器
-# scheduler = get_linear_schedule_with_warmup(optimizer,
-#                                             num_warmup_steps=0,
-#                                             num_training_steps=len(train_dataloader)*epochs)
+# warm-up
+scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
+                                                   num_warmup_steps=int(0.15 * total_steps),
+                                                   num_training_steps=total_steps)
+
+# 余弦退火
+scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optimizer,
+    T_max=total_steps,
+    eta_min=1e-6
+)
 
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
@@ -193,6 +207,8 @@ for epoch in range(epochs):
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()  # 更新模型参数
         # scheduler.step()
+        scheduler_warmup.step()
+        scheduler_cosine.step()
         loop.set_postfix(loss=loss.item())
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
 
@@ -220,7 +236,7 @@ for epoch in range(epochs):
     avg_val_loss = val_loss / len(dev_dataloader)
     print(f'Validation Loss: {avg_val_loss}, Accuracy: {accuracy}')
 
-    early_stopping(avg_val_loss)
+    early_stopping(accuracy)
     if early_stopping.early_stop:
         print("Early stopping triggered!")
         break
@@ -230,7 +246,7 @@ test_data = pd.read_csv('..\\data\\test.csv')
 test_list = test_data[['premise', 'hypothesis']].values.tolist()
 
 test_dataset = MyDataset(test_list, test_mode=True)
-test_dataloader = DataLoader(test_dataset, batch_size=16)
+test_dataloader = DataLoader(test_dataset, batch_size=32)
 
 model.eval()
 predictions = []

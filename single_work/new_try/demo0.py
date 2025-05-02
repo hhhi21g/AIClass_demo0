@@ -13,7 +13,7 @@ from transformers import AutoConfig
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\bert-base-multilingual-uncased'
+model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
 # model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\'
 
 # model_name = 'bert-base-uncased'
