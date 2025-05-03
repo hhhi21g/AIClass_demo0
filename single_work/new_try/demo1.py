@@ -5,6 +5,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import torch
 import os
+
+from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
@@ -22,6 +24,50 @@ model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
 
 
 # cache_dir = r'C:\Users\a1824\.cache\huggingface\hub\models--bert-base-uncased'
+
+class ModifiedXLMRobertaClassificationHead(nn.Module):
+    def __init__(self, input_dim, hidden_dim1=768, hidden_dim2=512, hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
+                 dropout_prob2=0.2):
+        super(ModifiedXLMRobertaClassificationHead, self).__init__()
+        self.dense1 = nn.Linear(input_dim, hidden_dim1)
+        self.bn1 = nn.BatchNorm1d(hidden_dim1)
+        self.a1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout_prob1)
+        self.dense2 = nn.Linear(hidden_dim1, hidden_dim2)
+        self.bn2 = nn.BatchNorm1d(hidden_dim2)
+        self.dense3 = nn.Linear(hidden_dim2, hidden_dim3)
+        self.bn3 = nn.BatchNorm1d(hidden_dim3)
+        self.dropout2 = nn.Dropout(dropout_prob2)
+        self.out_proj = nn.Linear(hidden_dim3, output_dim)  # 输出层
+
+    def forward(self, x):
+        x = self.dense1(x)
+        # print(x.size())
+        x = self.bn1(torch.mean(x, dim=1))
+        # print(x.size())
+        x = self.a1(x)
+        x = self.dropout1(x)
+        # print(x.size())
+
+        x = self.dense2(x)
+        # print(x.size())
+        x = self.bn2(x)
+        x = self.a1(x)
+        x = self.dropout1(x)
+        # print(x.size())
+
+        x = self.dense3(x)
+        x = self.bn3(x)
+        x = self.a1(x)
+        x = self.dropout2(x)  # Apply dropout
+        # print(x.size())
+
+        # x = torch.mean(x, dim=1)
+        # print(x.size())
+        x = self.out_proj(x)  # This should produce [batch_size, num_labels]
+        # print(x.size())
+        return x
+
 
 # 覆写torch.utils.data下的Dataset类，必不可少
 class MyDataset(Dataset):
@@ -152,37 +198,39 @@ class EarlyStopping:
                 self.early_stop = True  # 触发早停
 
 
-
 from transformers import AutoModelForSequenceClassification
-from torch.optim import AdamW
+from torch.optim import AdamW, Adam
 
 config = AutoConfig.from_pretrained(model_name, num_labels=3)
-config.hidden_dropout_prob = 0.3
+config.hidden_dropout_prob = 0.2
 
 model = AutoModelForSequenceClassification.from_pretrained(model_name, config=config)
 
+model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_dim1=768, hidden_dim2=512,
+                                                        hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
+                                                        dropout_prob2=0.2)
 print(model)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=1e-5, weight_decay=0.001)
+optimizer = AdamW(model.parameters(), lr=1e-5)
 
 import torch
 
 # 设置训练轮次
-epochs = 60
-early_stopping = EarlyStopping(patience=20, delta=0)
+epochs = 30
+early_stopping = EarlyStopping(patience=5, delta=0)
 total_steps = len(train_dataloader) * epochs
 
 # 创建学习率调度器
 # warm-up
 scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
-                                                   num_warmup_steps=int(0.15 * total_steps),
+                                                   num_warmup_steps=int(0.1 * total_steps),
                                                    num_training_steps=total_steps)
 
 # 余弦退火
 scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
     optimizer,
     T_max=total_steps,
-    eta_min=1e-6
+    eta_min=1e-7
 )
 
 for epoch in range(epochs):
