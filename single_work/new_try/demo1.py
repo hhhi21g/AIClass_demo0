@@ -211,7 +211,7 @@ model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_di
                                                         dropout_prob2=0.2)
 print(model)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=1e-5)
+optimizer = Adam(model.parameters(), lr=3.5e-4,betas=(0.9,0.999),eps=1e-8)
 
 import torch
 
