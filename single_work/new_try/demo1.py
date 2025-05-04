@@ -17,7 +17,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
 
-
 # model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\'
 
 # model_name = 'bert-base-uncased'
@@ -121,15 +120,15 @@ class DataProcessor():
             self._text_length_distri()
 
     # 获取数据封装(训练和开发认证)
-    def get_dataloader(self):
+    def get_dataloader(self,batch_size):
         data_list = self.data_df[['premise', 'hypothesis', 'label']].values.tolist()
         random.shuffle(data_list)
         k = len(data_list) // 5
 
         train_dataset = MyDataset(data_list[k:])
-        train_dataloader = DataLoader(train_dataset, batch_size=64)
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
         dev_dataset = MyDataset(data_list[:k])
-        dev_dataloader = DataLoader(dev_dataset, batch_size=32)
+        dev_dataloader = DataLoader(dev_dataset, batch_size=batch_size//2)
         return train_dataloader, dev_dataloader
 
     def _view_data(self):  # "_"表示供EDA调用的辅助方法
@@ -170,7 +169,9 @@ processor = DataProcessor('..\\data\\augmented_train.csv')
 processor.eda('view_data')
 processor.eda('count_class_distri')
 processor.eda('text_length_distri')
-train_dataloader, dev_dataloader = processor.get_dataloader()
+
+
+# train_dataloader, dev_dataloader = processor.get_dataloader()
 
 
 # for batch in train_dataloader:
@@ -202,22 +203,26 @@ from transformers import AutoModelForSequenceClassification
 from torch.optim import AdamW, Adam
 
 config = AutoConfig.from_pretrained(model_name, num_labels=3)
-config.hidden_dropout_prob = 0.2
+config.hidden_dropout_prob = 0.3
 
 model = AutoModelForSequenceClassification.from_pretrained(model_name, config=config)
 
-model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_dim1=768, hidden_dim2=512,
-                                                        hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
-                                                        dropout_prob2=0.2)
+# model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_dim1=768, hidden_dim2=512,
+#                                                         hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
+#                                                         dropout_prob2=0.2)
 print(model)
 model = model.to(device)
-optimizer = Adam(model.parameters(), lr=3.5e-4,betas=(0.9,0.999),eps=1e-8)
+optimizer = AdamW(model.parameters(), lr=1e-5, weight_decay=0.03)
 
 import torch
 
+
+
 # 设置训练轮次
-epochs = 30
+batch_size = 64
+epochs = 60
 early_stopping = EarlyStopping(patience=5, delta=0)
+train_dataloader, dev_dataloader = processor.get_dataloader(batch_size)
 total_steps = len(train_dataloader) * epochs
 
 # 创建学习率调度器
@@ -236,6 +241,9 @@ scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
     total_loss = 0
+    # if (epoch >= epochs * 0.85):
+    #     batch_size = 1
+    #     train_dataloader, dev_dataloader = processor.get_dataloader(batch_size)
     loop = tqdm(train_dataloader, desc=f'Training Epoch {epoch + 1}/{epoch}')
     for batch in loop:
         optimizer.zero_grad()  # 清除上一轮的梯度
@@ -258,6 +266,7 @@ for epoch in range(epochs):
         scheduler_warmup.step()
         scheduler_cosine.step()
         loop.set_postfix(loss=loss.item())
+
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
 
     # 假设你有一个验证集的 DataLoader（val_dataloader）
@@ -294,7 +303,7 @@ test_data = pd.read_csv('..\\data\\test.csv')
 test_list = test_data[['premise', 'hypothesis']].values.tolist()
 
 test_dataset = MyDataset(test_list, test_mode=True)
-test_dataloader = DataLoader(test_dataset, batch_size=32)
+test_dataloader = DataLoader(test_dataset, batch_size=8)
 
 model.eval()
 predictions = []
