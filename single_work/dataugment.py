@@ -26,12 +26,14 @@ back_tokenizer = MarianTokenizer.from_pretrained(back_model_name)
 
 back_translation_log = []
 
+
 def is_english(text):
     try:
         lang = detect(text)
         return lang == 'en'
     except LangDetectException:
         return False
+
 
 def synonym_replacement(sentence):
     """替换随机单词为同义词"""
@@ -61,7 +63,7 @@ def back_translation_batch(sentences):
         back_translated = back_model.generate(**back_inputs)
         en_texts = back_tokenizer.batch_decode(back_translated, skip_special_tokens=True)
 
-        for orig,bt in zip(sentences,en_texts):
+        for orig, bt in zip(sentences, en_texts):
             back_translation_log.append(f"{orig.strip()}|||{bt.strip()}")
 
     return en_texts
@@ -73,6 +75,30 @@ def random_deletion(sentence, p=0.1):
     if len(words) < 5:
         return sentence
     return ' '.join([w for w in words if random.random() > p])
+
+
+def random_insertion(sentence, p=0.1):
+    """随机插入同义词"""
+    words = sentence.split()
+    if len(words) < 5:
+        return sentence
+    synonym = random.choice(words)
+    synonyms = wordnet.synsets(synonym)
+    if synonyms:
+        insert_word = random.choice(synonyms).lemmas()[0].name()
+        words.insert(random.randint(0, len(words)), insert_word)
+    return ' '.join(words)
+
+
+def random_swap(sentence, p=0.1):
+    """随机交换句子中的两个单词"""
+    words = sentence.split()
+    if len(words) < 2:
+        return sentence
+    if random.random() < p:
+        idx1, idx2 = random.sample(range(len(words)), 2)
+        words[idx1], words[idx2] = words[idx2], words[idx1]
+    return ' '.join(words)
 
 
 def augment_data(premise, hypothesis, label):
@@ -92,6 +118,16 @@ def augment_data(premise, hypothesis, label):
         if random.random() < 0.2:
             premise = random_deletion(premise)
             hypothesis = random_deletion(hypothesis)
+
+        # 随机插入（20%概率执行）
+        if random.random() < 0.2:
+            premise = random_insertion(premise)
+            hypothesis = random_insertion(hypothesis)
+
+        # 随机交换（15%概率执行）
+        if random.random() < 0.15:
+            premise = random_swap(premise)
+            hypothesis = random_swap(hypothesis)
 
     except Exception as e:
         print(f"Augmentation error: {e}")

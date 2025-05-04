@@ -8,14 +8,21 @@ import os
 
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, get_linear_schedule_with_warmup, TrainingArguments
 from tqdm import tqdm
 from transformers import AutoConfig
 
+!pip
+install - q
+optuna
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
+# os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+model_name = 'symanto/xlm-roberta-base-snli-mnli-anli-xnli'
+
+
+# model_name = 'FacebookAI/xlm-roberta-large'
 
 
 # model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\'
@@ -26,47 +33,57 @@ model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base'
 # cache_dir = r'C:\Users\a1824\.cache\huggingface\hub\models--bert-base-uncased'
 
 class ModifiedXLMRobertaClassificationHead(nn.Module):
-    def __init__(self, input_dim, hidden_dim1=768, hidden_dim2=512, hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
-                 dropout_prob2=0.2):
+    def __init__(self, input_dim, hidden_dim=512):
         super(ModifiedXLMRobertaClassificationHead, self).__init__()
-        self.dense1 = nn.Linear(input_dim, hidden_dim1)
-        self.bn1 = nn.BatchNorm1d(hidden_dim1)
-        self.a1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout_prob1)
-        self.dense2 = nn.Linear(hidden_dim1, hidden_dim2)
-        self.bn2 = nn.BatchNorm1d(hidden_dim2)
-        self.dense3 = nn.Linear(hidden_dim2, hidden_dim3)
-        self.bn3 = nn.BatchNorm1d(hidden_dim3)
-        self.dropout2 = nn.Dropout(dropout_prob2)
-        self.out_proj = nn.Linear(hidden_dim3, output_dim)  # 输出层
+        self.dense1 = nn.Linear(input_dim, hidden_dim)
+        self.dropout = nn.Dropout(0.2)
+        self.LN = nn.LayerNorm(hidden_dim)
+        self.relu = nn.ReLU()
+        self.dense2 = nn.Linear(hidden_dim, 3)
 
     def forward(self, x):
+        x = self.dropout(x)
         x = self.dense1(x)
-        # print(x.size())
-        x = self.bn1(torch.mean(x, dim=1))
-        # print(x.size())
-        x = self.a1(x)
-        x = self.dropout1(x)
-        # print(x.size())
-
+        x = self.LN(x)
+        x = self.relu(x)
+        x = self.dropout(x)
         x = self.dense2(x)
-        # print(x.size())
-        x = self.bn2(x)
-        x = self.a1(x)
-        x = self.dropout1(x)
-        # print(x.size())
-
-        x = self.dense3(x)
-        x = self.bn3(x)
-        x = self.a1(x)
-        x = self.dropout2(x)  # Apply dropout
-        # print(x.size())
-
-        # x = torch.mean(x, dim=1)
-        # print(x.size())
-        x = self.out_proj(x)  # This should produce [batch_size, num_labels]
-        # print(x.size())
         return x
+
+
+class CustomXLMRobertaModel(nn.Module):
+    def __init__(self, num_labels):
+        super(CustomXLMRobertaModel, self).__init__()
+        self.roberta = AutoModel.from_pretrained(model_name)
+        self.dropout = nn.Dropout(0.2)
+        self.classifier = nn.Sequential(
+            nn.Linear(768, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, num_labels)
+        )
+        self.loss = nn.CrossEntropyLoss()
+        self.num_labels = num_labels
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        output = self.roberta(input_ids=input_ids, attention_mask=attention_mask)
+        cls_output = output.last_hidden_state[:, 0]
+        output = self.dropout(cls_output)
+        logits = self.classifier(output)
+
+        if labels is not None:
+            loss = self.loss(logits.view(-1, self.num_labels), labels.view(-1))
+            return {'loss': loss, 'logits': logits}
+        else:
+            return logits
+
+
+# 定义搜索空间
+def optuna_hp_space(trial):
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
+    }
 
 
 # 覆写torch.utils.data下的Dataset类，必不可少
@@ -166,7 +183,7 @@ class DataProcessor():
         plt.show()
 
 
-processor = DataProcessor('..\\data\\augmented_train.csv')
+processor = DataProcessor('/kaggle/input/contradictory/train.csv')
 processor.eda('view_data')
 processor.eda('count_class_distri')
 processor.eda('text_length_distri')
@@ -200,46 +217,69 @@ class EarlyStopping:
                 self.early_stop = True  # 触发早停
 
 
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoModel
 from torch.optim import AdamW, Adam
 
-# config = AutoConfig.from_pretrained(model_name, num_labels=3)
+config = AutoConfig.from_pretrained(model_name, num_labels=3)
 # config.hidden_dropout_prob = 0.3
 
-model = AutoModelForSequenceClassification.from_pretrained(model_name,
-                                                           num_labels=3,
-                                                           hidden_dropout_prob=0.5,
-                                                           classifier_dropout=0.3
-                                                           )
+model = CustomXLMRobertaModel(num_labels=3)
 
-# model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_dim1=768, hidden_dim2=512,
-#                                                         hidden_dim3=128, output_dim=3, dropout_prob1=0.5,
-#                                                         dropout_prob2=0.2)
+# model.classifier = ModifiedXLMRobertaClassificationHead(input_dim=768, hidden_dim=512)
+
 print(model)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=1e-5, weight_decay=0.01)
+for param in model.roberta.parameters():
+    param.requires_grad = False
 
+optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()))
+
+trainer_search = Trainer(
+    model=None,
+    model_init=model_init,
+    args=training_args,
+    train_dataset=tokenized_ds["train"],
+    eval_dataset=tokenized_ds["validation"],
+    data_collator=get_collator(),
+    tokenizer=get_tokenizer(),
+    compute_metrics=compute_metric
+)
+
+best_run = trainer_search.hyperparameter_search(
+    direction="minimize",
+    backend="optuna",
+    hp_space=optuna_hp_space,
+    n_trials=5,
+)
+
+# training_args = TrainingArguments("/content",
+#                                   optim="adamw_torch",
+#                                   num_train_epochs=1,
+#                                   evaluation_strategy="epoch",
+#                                   logging_dir='./logs',
+#                                   logging_steps=10,
+#                                   report_to="none")
 import torch
 
 # 设置训练轮次
-batch_size = 64
-epochs = 30
-early_stopping = EarlyStopping(patience=5, delta=0)
+batch_size = 16
+epochs = 5
+early_stopping = EarlyStopping(patience=2, delta=0)
 train_dataloader, dev_dataloader = processor.get_dataloader(batch_size)
 total_steps = len(train_dataloader) * epochs
 
 # 创建学习率调度器
 # warm-up
-scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
-                                                   num_warmup_steps=int(0.1 * total_steps),
-                                                   num_training_steps=total_steps)
+# scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
+#                                                    num_warmup_steps=int(0.1 * total_steps),
+#                                                    num_training_steps=total_steps)
 
-# 余弦退火
-scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-    optimizer,
-    T_max=total_steps,
-    eta_min=1e-7
-)
+# # 余弦退火
+# scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+#     optimizer,
+#     T_max=total_steps,
+#     eta_min=1e-7
+# )
 
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
@@ -259,7 +299,7 @@ for epoch in range(epochs):
 
         # 前向传播
         outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-        loss = outputs.loss
+        loss = outputs['loss']
         total_loss += loss.item()
 
         # 反向传播
@@ -267,8 +307,8 @@ for epoch in range(epochs):
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()  # 更新模型参数
         # scheduler.step()
-        scheduler_warmup.step()
-        scheduler_cosine.step()
+        # scheduler_warmup.step()
+        # scheduler_cosine.step()
         loop.set_postfix(loss=loss.item())
 
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
@@ -286,8 +326,11 @@ for epoch in range(epochs):
             labels = batch['label'].to(device)
 
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            val_loss += outputs.loss.item()
-            logits = outputs.logits
+
+            loss = outputs['loss']  # ✅ 从 dict 中取 loss
+            logits = outputs['logits']  # ✅ 从 dict 中取 logits
+
+            val_loss += loss.item()
 
             predictions = torch.argmax(logits, dim=-1)
             correct_predictions += (predictions == labels).sum().item()
@@ -302,7 +345,7 @@ for epoch in range(epochs):
         print("Early stopping triggered!")
         break
 
-test_data = pd.read_csv('..\\data\\test.csv')
+test_data = pd.read_csv('/kaggle/input/contradictory/test.csv')
 
 test_list = test_data[['premise', 'hypothesis']].values.tolist()
 
@@ -320,7 +363,8 @@ with torch.no_grad():  # 禁用梯度计算
 
         # 预测
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
+        logits = outputs  # ✅ 从 dict 中取 logits
+
         preds = torch.argmax(logits, dim=-1).cpu().numpy()
 
         predictions.extend(preds)
@@ -332,5 +376,5 @@ submission_df = pd.DataFrame({
 })
 
 # 保存结果为新的 CSV 文件
-submission_df.to_csv('submission.csv', index=False)
+submission_df.to_csv('/kaggle/working/submission.csv', index=False)
 print("预测完成")
