@@ -12,43 +12,58 @@ from transformers import AutoTokenizer, get_linear_schedule_with_warmup, Trainin
 from tqdm import tqdm
 from transformers import AutoConfig
 
-!pip
-install - q
-optuna
+# !pip
+# install - q
+# optuna
+# !pip
+# install
+# nlpaug
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-model_name = 'symanto/xlm-roberta-base-snli-mnli-anli-xnli'
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+# model_name = 'symanto/xlm-roberta-base-snli-mnli-anli-xnli'
+
+import os
+
+
+# file_path = '/kaggle/working/train_aug.csv'
+#
+# if os.path.exists(file_path):
+#     os.remove(file_path)
+#     print("✅ 已删除 submission.csv")
+# else:
+#     print("⚠️ 文件不存在，无需删除")
 
 
 # model_name = 'FacebookAI/xlm-roberta-large'
 
 
-# model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\'
+model_name = 'D:\\AIClass_demo\\AIClass_demo0\\single_work\\xlm-roberta-base-snli-mnli-anli-xnli'
+
 
 # model_name = 'bert-base-uncased'
 
 
 # cache_dir = r'C:\Users\a1824\.cache\huggingface\hub\models--bert-base-uncased'
 
-class ModifiedXLMRobertaClassificationHead(nn.Module):
-    def __init__(self, input_dim, hidden_dim=512):
-        super(ModifiedXLMRobertaClassificationHead, self).__init__()
-        self.dense1 = nn.Linear(input_dim, hidden_dim)
-        self.dropout = nn.Dropout(0.2)
-        self.LN = nn.LayerNorm(hidden_dim)
-        self.relu = nn.ReLU()
-        self.dense2 = nn.Linear(hidden_dim, 3)
-
-    def forward(self, x):
-        x = self.dropout(x)
-        x = self.dense1(x)
-        x = self.LN(x)
-        x = self.relu(x)
-        x = self.dropout(x)
-        x = self.dense2(x)
-        return x
+# class ModifiedXLMRobertaClassificationHead(nn.Module):
+#     def __init__(self, input_dim, hidden_dim=512):
+#         super(ModifiedXLMRobertaClassificationHead, self).__init__()
+#         self.dense1 = nn.Linear(input_dim, hidden_dim)
+#         self.dropout = nn.Dropout(0.2)
+#         self.LN = nn.LayerNorm(hidden_dim)
+#         self.relu = nn.ReLU()
+#         self.dense2 = nn.Linear(hidden_dim, 3)
+#
+#     def forward(self, x):
+#         x = self.dropout(x)
+#         x = self.dense1(x)
+#         x = self.LN(x)
+#         x = self.relu(x)
+#         x = self.dropout(x)
+#         x = self.dense2(x)
+#         return x
 
 
 class CustomXLMRobertaModel(nn.Module):
@@ -79,11 +94,11 @@ class CustomXLMRobertaModel(nn.Module):
             return logits
 
 
-# 定义搜索空间
-def optuna_hp_space(trial):
-    return {
-        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
-    }
+# # 定义搜索空间
+# def optuna_hp_space(trial):
+#     return {
+#         "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
+#     }
 
 
 # 覆写torch.utils.data下的Dataset类，必不可少
@@ -183,7 +198,58 @@ class DataProcessor():
         plt.show()
 
 
-processor = DataProcessor('/kaggle/input/contradictory/train.csv')
+# def tokenize_sentence(data):
+#     return get_tokenizer()(
+#         data['premise'],
+#         data['hypothesis'],
+#         truncation=True
+#     )
+
+
+import nltk
+
+# nltk.download('averaged_perceptron_tagger')
+# nltk.download('wordnet')
+# nltk.download('omw-1.4')  # 可选，但有助于改进结果
+
+import nlpaug.augmenter.word as naw
+
+# Set copy on write to suppress warning.
+pd.options.mode.copy_on_write = True
+
+# 加载原始训练集和测试集
+train_path = "D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\train_aug.csv"
+#
+# train_data = pd.read_csv(train_path)
+# aug = naw.SynonymAug(aug_src='wordnet')
+# augmented_rows = []
+#
+# for i in tqdm(range(len(train_data))):
+#     row = train_data.iloc[i]
+#     if row["language"] == "English":
+#         new_row = row.copy()  # ✅ 必须使用 copy()，否则是引用
+#         try:
+#             augmented = aug.augment(new_row["premise"])
+#             if isinstance(augmented, list) and augmented:
+#                 new_row["premise"] = augmented[0]
+#                 augmented_rows.append(new_row)
+#         except Exception as e:
+#             # print(f"❌ 跳过第 {i} 行，错误信息：{e}")
+#             continue
+#
+# # 构建增强 DataFrame 并合并
+# augmented_df = pd.DataFrame(augmented_rows)
+# combined_data = pd.concat([train_data, augmented_df], ignore_index=True)
+#
+# # 删除不需要的列
+# combined_data = combined_data.drop(columns=["lang_abv", "language"], axis=1)
+#
+# aug_csv_path = "D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\train_aug.csv"
+# combined_data.to_csv(aug_csv_path, index=False)
+#
+# print(f"✅ 增强后的训练集已保存到: {aug_csv_path}")
+
+processor = DataProcessor(train_path)
 processor.eda('view_data')
 processor.eda('count_class_distri')
 processor.eda('text_length_distri')
@@ -229,28 +295,11 @@ model = CustomXLMRobertaModel(num_labels=3)
 
 print(model)
 model = model.to(device)
+
 for param in model.roberta.parameters():
     param.requires_grad = False
 
-optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()))
-
-trainer_search = Trainer(
-    model=None,
-    model_init=model_init,
-    args=training_args,
-    train_dataset=tokenized_ds["train"],
-    eval_dataset=tokenized_ds["validation"],
-    data_collator=get_collator(),
-    tokenizer=get_tokenizer(),
-    compute_metrics=compute_metric
-)
-
-best_run = trainer_search.hyperparameter_search(
-    direction="minimize",
-    backend="optuna",
-    hp_space=optuna_hp_space,
-    n_trials=5,
-)
+optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=4.5e-5)
 
 # training_args = TrainingArguments("/content",
 #                                   optim="adamw_torch",
@@ -345,7 +394,7 @@ for epoch in range(epochs):
         print("Early stopping triggered!")
         break
 
-test_data = pd.read_csv('/kaggle/input/contradictory/test.csv')
+test_data = pd.read_csv('D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\test.csv')
 
 test_list = test_data[['premise', 'hypothesis']].values.tolist()
 
@@ -376,5 +425,5 @@ submission_df = pd.DataFrame({
 })
 
 # 保存结果为新的 CSV 文件
-submission_df.to_csv('/kaggle/working/submission.csv', index=False)
+submission_df.to_csv('D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\submission.csv', index=False)
 print("预测完成")

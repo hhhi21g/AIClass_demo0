@@ -217,14 +217,14 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name,
 #                                                         dropout_prob2=0.2)
 print(model)
 model = model.to(device)
-optimizer = AdamW(model.parameters(), lr=1e-5, weight_decay=0.01)
+optimizer = AdamW(model.parameters(), lr=4.5e-5)
 
 import torch
 
 # 设置训练轮次
-batch_size = 64
-epochs = 30
-early_stopping = EarlyStopping(patience=5, delta=0)
+batch_size = 16
+epochs = 5
+early_stopping = EarlyStopping(patience=2, delta=0)
 train_dataloader, dev_dataloader = processor.get_dataloader(batch_size)
 total_steps = len(train_dataloader) * epochs
 
