@@ -75,7 +75,7 @@ class CustomXLMRobertaModel(nn.Module):
             nn.Linear(768, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.5),
             nn.Linear(512, num_labels)
         )
         self.loss = nn.CrossEntropyLoss()
@@ -318,17 +318,16 @@ train_dataloader, dev_dataloader = processor.get_dataloader(batch_size)
 total_steps = len(train_dataloader) * epochs
 
 # 创建学习率调度器
-# warm-up
-# scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
-#                                                    num_warmup_steps=int(0.1 * total_steps),
-#                                                    num_training_steps=total_steps)
+scheduler_warmup = get_linear_schedule_with_warmup(optimizer,
+                                                   num_warmup_steps=int(0.2 * total_steps),
+                                                   num_training_steps=total_steps)
 
-# # 余弦退火
-# scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-#     optimizer,
-#     T_max=total_steps,
-#     eta_min=1e-7
-# )
+# 余弦退火
+scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optimizer,
+    T_max=total_steps,
+    eta_min=1e-7
+)
 
 for epoch in range(epochs):
     model.train()  # 设置模型为训练模式
@@ -356,8 +355,8 @@ for epoch in range(epochs):
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()  # 更新模型参数
         # scheduler.step()
-        # scheduler_warmup.step()
-        # scheduler_cosine.step()
+        scheduler_warmup.step()
+        scheduler_cosine.step()
         loop.set_postfix(loss=loss.item())
 
     print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_dataloader)}')
