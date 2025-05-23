@@ -220,34 +220,33 @@ pd.options.mode.copy_on_write = True
 # 加载原始训练集和测试集
 train_path = "D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\train_aug.csv"
 #
-# train_data = pd.read_csv(train_path)
-# aug = naw.SynonymAug(aug_src='wordnet')
-# augmented_rows = []
-#
-# for i in tqdm(range(len(train_data))):
-#     row = train_data.iloc[i]
-#     if row["language"] == "English":
-#         new_row = row.copy()  # ✅ 必须使用 copy()，否则是引用
-#         try:
-#             augmented = aug.augment(new_row["premise"])
-#             if isinstance(augmented, list) and augmented:
-#                 new_row["premise"] = augmented[0]
-#                 augmented_rows.append(new_row)
-#         except Exception as e:
-#             # print(f"❌ 跳过第 {i} 行，错误信息：{e}")
-#             continue
-#
-# # 构建增强 DataFrame 并合并
-# augmented_df = pd.DataFrame(augmented_rows)
-# combined_data = pd.concat([train_data, augmented_df], ignore_index=True)
-#
-# # 删除不需要的列
-# combined_data = combined_data.drop(columns=["lang_abv", "language"], axis=1)
-#
-# aug_csv_path = "D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\train_aug.csv"
-# combined_data.to_csv(aug_csv_path, index=False)
-#
-# print(f"✅ 增强后的训练集已保存到: {aug_csv_path}")
+train_data = pd.read_csv(train_path)
+aug = naw.SynonymAug(aug_src='wordnet')
+augmented_rows = []
+
+for i in tqdm(range(len(train_data))):
+    row = train_data.iloc[i]
+    if row["language"] == "English":
+        new_row = row.copy()  # 必须使用 copy()，否则是引用
+        try:
+            augmented = aug.augment(new_row["premise"])
+            if isinstance(augmented, list) and augmented:
+                new_row["premise"] = augmented[0]
+                augmented_rows.append(new_row)
+        except Exception as e:
+            continue
+
+# 构建增强 DataFrame 并合并
+augmented_df = pd.DataFrame(augmented_rows)
+combined_data = pd.concat([train_data, augmented_df], ignore_index=True)
+
+# 删除不需要的列
+combined_data = combined_data.drop(columns=["lang_abv", "language"], axis=1)
+
+aug_csv_path = "D:\\AIClass_demo\\AIClass_demo0\\single_work\\data\\train_aug.csv"
+combined_data.to_csv(aug_csv_path, index=False)
+
+print(f"✅ 增强后的训练集已保存到: {aug_csv_path}")
 
 processor = DataProcessor(train_path)
 processor.eda('view_data')
